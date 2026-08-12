@@ -1,0 +1,14 @@
+{
+  "name": "safe-store",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SuperSafe ($SAFE) digital product store with on-chain payment verification.",
+  "dependencies": {
+    "@solana/web3.js": "^1.95.0",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.600.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SuperSafe Store</title>
+<meta name="description" content="Digital products, paid for in $SAFE." />
+<style>
+  :root {
+    --bg: #0d1b24;
+    --bg-panel: #12242f;
+    --border: #24404f;
+    --text: #e8eef1;
+    --text-dim: #8fa4ad;
+    --accent: #9fb4bd;
+    --accent-bright: #d8e3e6;
+    --ok: #6fbf8f;
+    --err: #d9776a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Georgia', 'Iowan Old Style', serif;
+    min-height: 100vh;
+  }
+  header {
+    padding: 48px 24px 24px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  header .mark {
+    font-family: Georgia, serif;
+    font-size: 13px;
+    letter-spacing: 0.35em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  header h1 {
+    font-size: 32px;
+    margin: 0;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+  header p {
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-top: 12px;
+    font-family: -apple-system, sans-serif;
+  }
+  main {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 24px 80px;
+  }
+  .price-banner {
+    font-family: -apple-system, sans-serif;
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-bottom: 32px;
+    letter-spacing: 0.02em;
+  }
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+  .card h2 {
+    font-weight: 400;
+    font-size: 20px;
+    margin: 0 0 8px;
+  }
+  .card p.desc {
+    font-family: -apple-system, sans-serif;
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    margin: 0 0 20px;
+  }
+  .price-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+  }
+  .price-usd { color: var(--text-dim); font-family: -apple-system, sans-serif; font-size: 13px; }
+  .price-safe { font-size: 20px; letter-spacing: 0.02em; }
+  button.buy {
+    width: 100%;
+    margin-top: 20px;
+    padding: 14px;
+    background: var(--accent-bright);
+    color: #0d1b24;
+    border: none;
+    border-radius: 3px;
+    font-family: -apple-system, sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  button.buy:hover { opacity: 0.85; }
+  button.buy:disabled { opacity: 0.4; cursor: not-allowed; }
+  .status {
+    margin-top: 16px;
+    font-family: -apple-system, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .status.ok { color: var(--ok); }
+  .status.err { color: var(--err); }
+  .status.pending { color: var(--text-dim); }
+  a.download-link {
+    display: inline-block;
+    margin-top: 10px;
+    color: var(--ok);
+    font-family: -apple-system, sans-serif;
+    font-size: 13px;
+    text-decoration: underline;
+  }
+  footer {
+    text-align: center;
+    padding: 24px;
+    font-family: -apple-system, sans-serif;
+    font-size: 11px;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+  }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark">SuperSafe</div>
+  <h1>Store</h1>
+  <p>Pay in $SAFE. Download instantly. No accounts, no middlemen.</p>
+</header>
+
+<main>
+  <div class="price-banner" id="price-banner">Loading live SAFE/USD price…</div>
+  <div id="products"></div>
+</main>
+
+<footer>
+  Payments verified on-chain on Solana. Prices shown for informational purposes only and are not investment advice.
+  <br />
+  <a href="https://thesupersafe.link" target="_blank" rel="noopener">thesupersafe.link</a>
+</footer>
+
+<script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
+<script>
+const RECEIVER_WALLET = "EoWBVhuhnjjESj2n3yq52jMaRYRj9uGvYxxqYGPu3z7h";
+const TOKEN_MINT = "2BhAe4vwnDeBsWc67HSZ4cozq5qJsG3SYnFkZQwZnray";
+const TOKEN_DECIMALS = 6;
+const TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const ASSOCIATED_TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+
+let currentPriceUsd = null;
+
+async function findAssociatedTokenAddress(owner, mint) {
+  const [address] = await solanaWeb3.PublicKey.findProgramAddress(
+    [owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    ASSOCIATED_TOKEN_PROGRAM_ID
+  );
+  return address;
+}
+
+function createAtaInstruction(payer, ata, owner, mint) {
+  const keys = [
+    { pubkey: payer, isSigner: true, isWritable: true },
+    { pubkey: ata, isSigner: false, isWritable: true },
+    { pubkey: owner, isSigner: false, isWritable: false },
+    { pubkey: mint, isSigner: false, isWritable: false },
+    { pubkey: solanaWeb3.SystemProgram.programId, isSigner: false, isWritable: false },
+    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    { pubkey: solanaWeb3.SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
+  ];
+  return new solanaWeb3.TransactionInstruction({
+    keys,
+    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
+    data: Buffer.from([]),
+  });
+}
+
+function createTransferCheckedInstruction(source, mint, destination, owner, amount, decimals) {
+  const dataLayout = Buffer.alloc(10);
+  dataLayout.writeUInt8(12, 0); // TransferChecked instruction index
+  dataLayout.writeBigUInt64LE(BigInt(amount), 1);
+  dataLayout.writeUInt8(decimals, 9);
+
+  const keys = [
+    { pubkey: source, isSigner: false, isWritable: true },
+    { pubkey: mint, isSigner: false, isWritable: false },
+    { pubkey: destination, isSigner: false, isWritable: true },
+    { pubkey: owner, isSigner: true, isWritable: false },
+  ];
+
+  return new solanaWeb3.TransactionInstruction({
+    keys,
+    programId: TOKEN_PROGRAM_ID,
+    data: dataLayout,
+  });
+}
+
+async function loadPrice() {
+  try {
+    const res = await fetch("/.netlify/functions/get-price");
+    const data = await res.json();
+    if (data.priceUsd) {
+      currentPriceUsd = data.priceUsd;
+      document.getElementById("price-banner").textContent =
+        `1 SAFE ≈ $${data.priceUsd.toFixed(6)} USD`;
+    } else {
+      document.getElementById("price-banner").textContent =
+        "SAFE price unavailable right now — checkout is temporarily disabled.";
+    }
+  } catch (e) {
+    document.getElementById("price-banner").textContent =
+      "Could not load live pricing.";
+  }
+  renderProducts();
+}
+
+async function renderProducts() {
+  const res = await fetch("/products.json");
+  const products = await res.json();
+  const container = document.getElementById("products");
+  container.innerHTML = "";
+
+  products.forEach((p) => {
+    const safeAmount = currentPriceUsd ? (p.priceUSD / currentPriceUsd) : null;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <h2>${p.name}</h2>
+      <p class="desc">${p.description}</p>
+      <div class="price-row">
+        <span class="price-usd">$${p.priceUSD.toFixed(2)} USD</span>
+        <span class="price-safe">${safeAmount ? safeAmount.toFixed(2) + " SAFE" : "—"}</span>
+      </div>
+      <button class="buy" ${!safeAmount ? "disabled" : ""}>Buy with Phantom</button>
+      <div class="status" id="status-${p.id}"></div>
+    `;
+    card.querySelector("button.buy").addEventListener("click", () => buyProduct(p, safeAmount));
+    container.appendChild(card);
+  });
+}
+
+function setStatus(productId, message, type) {
+  const el = document.getElementById(`status-${productId}`);
+  el.textContent = message;
+  el.className = `status ${type}`;
+}
+
+async function buyProduct(product, safeAmount) {
+  if (!window.solana || !window.solana.isPhantom) {
+    setStatus(product.id, "Phantom wallet not found. Install it from phantom.app.", "err");
+    return;
+  }
+
+  try {
+    setStatus(product.id, "Connecting to Phantom…", "pending");
+    const resp = await window.solana.connect();
+    const buyerPubkey = resp.publicKey;
+
+    const connection = new solanaWeb3.Connection(
+      "https://api.mainnet-beta.solana.com",
+      "confirmed"
+    );
+
+    const mint = new solanaWeb3.PublicKey(TOKEN_MINT);
+    const receiver = new solanaWeb3.PublicKey(RECEIVER_WALLET);
+
+    const sourceAta = await findAssociatedTokenAddress(buyerPubkey, mint);
+    const destAta = await findAssociatedTokenAddress(receiver, mint);
+
+    const tx = new solanaWeb3.Transaction();
+
+    const destInfo = await connection.getAccountInfo(destAta);
+    if (!destInfo) {
+      tx.add(createAtaInstruction(buyerPubkey, destAta, receiver, mint));
+    }
+
+    const rawAmount = Math.round(safeAmount * 10 ** TOKEN_DECIMALS);
+    tx.add(
+      createTransferCheckedInstruction(
+        sourceAta,
+        mint,
+        destAta,
+        buyerPubkey,
+        rawAmount,
+        TOKEN_DECIMALS
+      )
+    );
+
+    tx.feePayer = buyerPubkey;
+    const { blockhash } = await connection.getLatestBlockhash();
+    tx.recentBlockhash = blockhash;
+
+    setStatus(product.id, "Confirm the transaction in Phantom…", "pending");
+    const signed = await window.solana.signTransaction(tx);
+    const signature = await connection.sendRawTransaction(signed.serialize());
+
+    setStatus(product.id, "Payment sent. Waiting for on-chain confirmation…", "pending");
+    await connection.confirmTransaction(signature, "confirmed");
+
+    setStatus(product.id, "Verifying payment…", "pending");
+    const verifyRes = await fetch("/.netlify/functions/verify-payment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        signature,
+        productId: product.id,
+        buyerWallet: buyerPubkey.toBase58(),
+      }),
+    });
+    const verifyData = await verifyRes.json();
+
+    if (verifyRes.ok && verifyData.success) {
+      const el = document.getElementById(`status-${product.id}`);
+      el.className = "status ok";
+      el.innerHTML = `Payment verified. <a class="download-link" href="${verifyData.downloadUrl}" target="_blank" rel="noopener">Download your file (link expires in 15 min)</a>`;
+    } else {
+      setStatus(product.id, verifyData.error || "Payment verification failed.", "err");
+    }
+  } catch (err) {
+    console.error(err);
+    setStatus(product.id, err.message || "Transaction was cancelled or failed.", "err");
+  }
+}
+
+loadPrice();
+</script>
+
+</body>
+</html>
