@@ -6,8 +6,13 @@
 //
 // Pricing is a fixed SAFE amount per product (set in products.json),
 // not derived from a live USD quote.
+//
+// Note: this calls the Solana JSON-RPC endpoint directly via fetch()
+// rather than using @solana/web3.js's Connection class. That class pulls
+// in rpc-websockets -> an ESM-only build of uuid, which crashes under
+// Node's CommonJS require() in Netlify's Lambda runtime. A plain RPC
+// call avoids that broken dependency chain entirely.
 
-const { Connection, PublicKey } = require("@solana/web3.js");
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const products = require("../../products.json");
@@ -18,6 +23,37 @@ const TOKEN_DECIMALS = 6;
 
 // Allow tiny float/rounding slack, not a price-movement tolerance.
 const ROUNDING_TOLERANCE = 0.001; // 0.1%
+
+async function getParsedTransaction(rpcUrl, signature) {
+  const res = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getTransaction",
+      params: [
+        signature,
+        {
+          encoding: "jsonParsed",
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`RPC request failed with status ${res.status}`);
+  }
+
+  const json = await res.json();
+  if (json.error) {
+    throw new Error(`RPC error: ${json.error.message || JSON.stringify(json.error)}`);
+  }
+
+  return json.result;
+}
 
 exports.handler = async function (event) {
   const headers = {
@@ -60,12 +96,7 @@ exports.handler = async function (event) {
       throw new Error("Server misconfiguration: missing RECEIVER_WALLET or SOLANA_RPC_URL");
     }
 
-    const connection = new Connection(rpcUrl, "confirmed");
-
-    const tx = await connection.getParsedTransaction(signature, {
-      maxSupportedTransactionVersion: 0,
-      commitment: "confirmed",
-    });
+    const tx = await getParsedTransaction(rpcUrl, signature);
 
     if (!tx) {
       return {
@@ -118,7 +149,7 @@ exports.handler = async function (event) {
 
     // Confirm the buyer's wallet is a signer/source of this transaction.
     const accountKeys = tx.transaction.message.accountKeys.map((k) =>
-      typeof k === "string" ? k : k.pubkey.toBase58()
+      typeof k === "string" ? k : k.pubkey
     );
     if (!accountKeys.includes(buyerWallet)) {
       return {
