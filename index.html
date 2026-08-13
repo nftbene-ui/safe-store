@@ -191,15 +191,16 @@ function createAtaInstruction(payer, ata, owner, mint) {
   return new solanaWeb3.TransactionInstruction({
     keys,
     programId: ASSOCIATED_TOKEN_PROGRAM_ID,
-    data: Buffer.from([]),
+    data: new Uint8Array(0),
   });
 }
 
 function createTransferCheckedInstruction(source, mint, destination, owner, amount, decimals) {
-  const dataLayout = Buffer.alloc(10);
-  dataLayout.writeUInt8(12, 0); // TransferChecked instruction index
-  dataLayout.writeBigUInt64LE(BigInt(amount), 1);
-  dataLayout.writeUInt8(decimals, 9);
+  const data = new Uint8Array(10);
+  data[0] = 12; // TransferChecked instruction index
+  const view = new DataView(data.buffer);
+  view.setBigUint64(1, BigInt(amount), true); // little-endian
+  data[9] = decimals;
 
   const keys = [
     { pubkey: source, isSigner: false, isWritable: true },
@@ -211,7 +212,7 @@ function createTransferCheckedInstruction(source, mint, destination, owner, amou
   return new solanaWeb3.TransactionInstruction({
     keys,
     programId: TOKEN_PROGRAM_ID,
-    data: dataLayout,
+    data,
   });
 }
 
