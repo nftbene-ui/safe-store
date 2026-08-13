@@ -3,6 +3,9 @@
 // Verifies an on-chain SAFE token payment against a Solana transaction
 // signature, then issues a short-lived pre-signed S3 URL for the
 // purchased product's download.
+//
+// Pricing is a fixed SAFE amount per product (set in products.json),
+// not derived from a live USD quote.
 
 const { Connection, PublicKey } = require("@solana/web3.js");
 const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
@@ -13,26 +16,8 @@ const downloads = require("./_downloads.json");
 const TOKEN_MINT = "2BhAe4vwnDeBsWc67HSZ4cozq5qJsG3SYnFkZQwZnray";
 const TOKEN_DECIMALS = 6;
 
-// Allow the buyer to have paid slightly less than the exact live-quote
-// amount to account for price movement between quote and confirmation.
-const PRICE_TOLERANCE = 0.03; // 3%
-
-const DEXSCREENER_URL = `https://api.dexscreener.com/latest/dex/tokens/${TOKEN_MINT}`;
-
-async function getSafeUsdPrice() {
-  const res = await fetch(DEXSCREENER_URL);
-  if (!res.ok) throw new Error("Failed to fetch SAFE price for verification");
-  const data = await res.json();
-  if (!data.pairs || data.pairs.length === 0) {
-    throw new Error("SAFE price unavailable (not indexed on DexScreener)");
-  }
-  const bestPair = data.pairs.reduce((best, pair) => {
-    const liquidity = pair.liquidity?.usd ?? 0;
-    const bestLiquidity = best?.liquidity?.usd ?? -1;
-    return liquidity > bestLiquidity ? pair : best;
-  }, null);
-  return parseFloat(bestPair.priceUsd);
-}
+// Allow tiny float/rounding slack, not a price-movement tolerance.
+const ROUNDING_TOLERANCE = 0.001; // 0.1%
 
 exports.handler = async function (event) {
   const headers = {
@@ -143,10 +128,9 @@ exports.handler = async function (event) {
       };
     }
 
-    // Verify the amount received covers the product price at the live rate.
-    const safeUsdPrice = await getSafeUsdPrice();
-    const requiredSafe = product.priceUSD / safeUsdPrice;
-    const minAcceptable = requiredSafe * (1 - PRICE_TOLERANCE);
+    // Verify the amount received covers the product's fixed SAFE price.
+    const requiredSafe = product.priceSafe;
+    const minAcceptable = requiredSafe * (1 - ROUNDING_TOLERANCE);
 
     if (receivedSafe < minAcceptable) {
       return {
@@ -162,10 +146,10 @@ exports.handler = async function (event) {
 
     // Payment verified — generate a short-lived pre-signed S3 download URL.
     const s3 = new S3Client({
-      region: process.env.AWS_REGION,
+      region: process.env.S3_REGION,
       credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+        accessKeyId: process.env.S3_ACCESS_KEY_ID,
+        secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
       },
     });
 
