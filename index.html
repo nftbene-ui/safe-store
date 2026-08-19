@@ -175,13 +175,36 @@
   <a href="https://thesupersafe.link" target="_blank" rel="noopener">thesupersafe.link</a>
 </footer>
 
-<script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+<script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js" onerror="window.__web3LoadFailed = true"></script>
 <script>
 const RECEIVER_WALLET = "EoWBVhuhnjjESj2n3yq52jMaRYRj9uGvYxxqYGPu3z7h";
 const TOKEN_MINT = "2BhAe4vwnDeBsWc67HSZ4cozq5qJsG3SYnFkZQwZnray";
 const TOKEN_DECIMALS = 6;
-const TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
-const ASSOCIATED_TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+let TOKEN_PROGRAM_ID;
+let ASSOCIATED_TOKEN_PROGRAM_ID;
+
+function loadFallbackWeb3(onReady) {
+  const s = document.createElement("script");
+  s.src = "https://cdn.jsdelivr.net/npm/@solana/web3.js@1.95.3/lib/index.iife.min.js";
+  s.onload = onReady;
+  s.onerror = () => {
+    const el = document.getElementById("products");
+    if (el) {
+      el.innerHTML = '<p style="color:#f66">Could not load the wallet library. Check your connection and reload the page.</p>';
+    }
+  };
+  document.head.appendChild(s);
+}
+
+function initWeb3AndApp() {
+  if (typeof solanaWeb3 === "undefined") {
+    loadFallbackWeb3(initWeb3AndApp);
+    return;
+  }
+  TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+  ASSOCIATED_TOKEN_PROGRAM_ID = new solanaWeb3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+  renderProducts();
+}
 
 async function findAssociatedTokenAddress(owner, mint) {
   const [address] = await solanaWeb3.PublicKey.findProgramAddress(
@@ -261,8 +284,24 @@ function setStatus(productId, message, type) {
   el.className = `status ${type}`;
 }
 
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function redirectToPhantomBrowser() {
+  const currentUrl = window.location.href;
+  const dappEncoded = encodeURIComponent(currentUrl);
+  const refEncoded = encodeURIComponent(window.location.origin);
+  window.location.href = `https://phantom.app/ul/browse/${dappEncoded}?ref=${refEncoded}`;
+}
+
 async function buyProduct(product, safeAmount) {
   if (!window.solana || !window.solana.isPhantom) {
+    if (isMobileDevice()) {
+      setStatus(product.id, "Opening this page inside the Phantom app…", "pending");
+      redirectToPhantomBrowser();
+      return;
+    }
     setStatus(product.id, "Phantom wallet not found. Install it from phantom.app.", "err");
     return;
   }
@@ -338,7 +377,11 @@ async function buyProduct(product, safeAmount) {
   }
 }
 
-renderProducts();
+if (window.__web3LoadFailed || typeof solanaWeb3 === "undefined") {
+  loadFallbackWeb3(initWeb3AndApp);
+} else {
+  initWeb3AndApp();
+}
 </script>
 
 </body>
